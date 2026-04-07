@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WarpXGaming — AI Assistant</title>
+  <link rel="icon" type="image/png" href="favicon-32.png">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+    :root {
+      --bg: #06080d;
+      --panel: #0c0f17;
+      --surface: #111621;
+      --border: rgba(139, 92, 246, 0.08);
+      --muted: #6b7a99;
+      --text: #e2e8f0;
+      --accent: #8b5cf6;
+      --accent-glow: rgba(139, 92, 246, 0.35);
+      --cyan: #06b6d4;
+      --green: #10b981;
+      --font: 'Inter', system-ui, -apple-system, sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      font-family: var(--font);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+
+    /* ── Neural grid background ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 60% at 50% -20%, rgba(139,92,246,0.08), transparent),
+        radial-gradient(ellipse 60% 50% at 80% 100%, rgba(6,182,212,0.05), transparent),
+        linear-gradient(180deg, transparent 0%, rgba(139,92,246,0.02) 50%, transparent 100%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Floating particles canvas ── */
+    #particles { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+
+    /* ── App shell ── */
+    .app {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      height: 100vh;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 20px 16px;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .brand-icon {
+      width: 42px; height: 42px;
+      border-radius: 12px;
+      object-fit: cover;
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+    .brand-text h1 {
+      font-size: 16px;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), var(--cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.3px;
+    }
+    .brand-text span {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    .new-chat-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(139,92,246,0.15), rgba(6,182,212,0.08));
+      border: 1px solid rgba(139,92,246,0.15);
+      color: var(--text);
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .new-chat-btn:hover {
+      background: linear-gradient(135deg, rgba(139,92,246,0.25), rgba(6,182,212,0.12));
+      box-shadow: 0 0 20px rgba(139,92,246,0.1);
+    }
+
+    .conversations { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+    .conv-item {
+      padding: 10px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.15s;
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .conv-item:hover, .conv-item.active { background: rgba(139,92,246,0.06); color: var(--text); }
+    .conv-item .conv-icon { font-size: 16px; opacity: 0.5; }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.6;
+    }
+    .sidebar-footer kbd {
+      background: rgba(255,255,255,0.05);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+
+    /* ── Main panel ── */
+    .main { display: flex; flex-direction: column; position: relative; }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      background: rgba(12,15,23,0.8);
+    }
+    .topbar-left { display: flex; flex-direction: column; gap: 2px; }
+    .topbar-title { font-weight: 700; font-size: 15px; }
+    .topbar-sub { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+    .status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px rgba(16,185,129,0.5);
+      animation: pulse-dot 2s infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .clear-btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .clear-btn:hover { background: rgba(239,68,68,0.08); color: #f87171; border-color: rgba(239,68,68,0.2); }
+
+    /* ── Messages area ── */
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      scroll-behavior: smooth;
+    }
+    .messages::-webkit-scrollbar { width: 4px; }
+    .messages::-webkit-scrollbar-thumb { background: rgba(139,92,246,0.2); border-radius: 4px; }
+
+    /* ── Welcome screen ── */
+    .welcome {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      text-align: center;
+      animation: fadeUp 0.6s ease;
+    }
+    .welcome-logo {
+      width: 72px; height: 72px;
+      border-radius: 20px;
+      object-fit: cover;
+      box-shadow: 0 0 40px var(--accent-glow);
+      animation: float 4s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+    .welcome h2 {
+      font-size: 28px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff, var(--accent), var(--cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .welcome p { color: var(--muted); font-size: 15px; max-width: 420px; line-height: 1.6; }
+
+    .suggestions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      max-width: 520px;
+      width: 100%;
+    }
+    .suggestion {
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: left;
+    }
+    .suggestion:hover {
+      border-color: rgba(139,92,246,0.25);
+      box-shadow: 0 0 20px rgba(139,92,246,0.06);
+      transform: translateY(-1px);
+    }
+    .suggestion .s-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .suggestion .s-desc { font-size: 12px; color: var(--muted); }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Message bubbles ── */
+    .msg-row {
+      display: flex;
+      gap: 12px;
+      animation: fadeUp 0.3s ease;
+    }
+    .msg-row.user { flex-direction: row-reverse; }
+
+    .msg-avatar {
+      width: 34px; height: 34px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .msg-avatar.ai-av {
+      background: linear-gradient(135deg, var(--accent), #6d28d9);
+      box-shadow: 0 0 16px rgba(139,92,246,0.2);
+    }
+    .msg-avatar.user-av {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .msg-bubble {
+      max-width: 72%;
+      padding: 14px 18px;
+      border-radius: 16px;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+    .msg-row.ai .msg-bubble {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-top-left-radius: 4px;
+    }
+    .msg-row.user .msg-bubble {
+      background: linear-gradient(135deg, rgba(139,92,246,0.12), rgba(6,182,212,0.06));
+      border: 1px solid rgba(139,92,246,0.12);
+      border-top-right-radius: 4px;
+    }
+    .msg-time {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 6px;
+      opacity: 0.6;
+    }
+    .msg-row.user .msg-time { text-align: right; }
+
+    /* Typing indicator */
+    .typing-dots { display: flex; gap: 4px; padding: 4px 0; }
+    .typing-dots span {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: bounce 1.4s infinite;
+    }
+    .typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); opacity: 0.3; }
+      40% { transform: translateY(-6px); opacity: 1; }
+    }
+
+    /* Code blocks in AI responses */
+    .msg-bubble code {
+      font-family: var(--mono);
+      background: rgba(0,0,0,0.3);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .msg-bubble pre {
+      background: rgba(0,0,0,0.4);
+      padding: 12px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 8px 0;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    /* ── Input area ── */
+    .input-area {
+      padding: 16px 24px 20px;
+      border-top: 1px solid var(--border);
+      background: rgba(12,15,23,0.6);
+      backdrop-filter: blur(12px);
+    }
+    .input-wrapper {
+      display: flex;
+      align-items: flex-end;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 8px 8px 8px 18px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .input-wrapper:focus-within {
+      border-color: rgba(139,92,246,0.3);
+      box-shadow: 0 0 24px rgba(139,92,246,0.06);
+    }
+    .input-wrapper textarea {
+      flex: 1;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
+      line-height: 1.5;
+      resize: none;
+      min-height: 24px;
+      max-height: 120px;
+      outline: none;
+      padding: 6px 0;
+    }
+    .input-wrapper textarea::placeholder { color: var(--muted); }
+
+    .send-btn {
+      width: 40px; height: 40px;
+      border-radius: 12px;
+      border: none;
+      background: linear-gradient(135deg, var(--accent), #6d28d9);
+      color: white;
+      font-size: 18px;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    .send-btn:hover { box-shadow: 0 0 20px var(--accent-glow); transform: scale(1.05); }
+    .send-btn:active { transform: scale(0.95); }
+    .send-btn:disabled { opacity: 0.3; cursor: default; transform: none; box-shadow: none; }
+
+    .input-hint {
+      text-align: center;
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 8px;
+      opacity: 0.6;
+    }
+
+    /* ── Mobile responsive ── */
+    @media (max-width: 768px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .topbar { padding: 12px 16px; }
+      .messages { padding: 16px; }
+      .input-area { padding: 12px 16px 16px; }
+      .suggestions { grid-template-columns: 1fr; }
+      .msg-bubble { max-width: 88%; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="particles"></canvas>
+
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="favicon-32.png" alt="WarpXGaming Logo" class="brand-icon" />
+        <div class="brand-text">
+          <h1>WarpXGaming</h1>
+          <span>AI Engine</span>
+        </div>
+      </div>
+
+      <div class="new-chat-btn" id="newChat">
+        <span>＋</span> New Chat
+      </div>
+
+      <div class="conversations" id="conversations"></div>
+
+      <div class="sidebar-footer">
+        <kbd>Enter</kbd> send &nbsp; <kbd>Shift + Enter</kbd> newline<br>
+        Powered by WarpX Neural Engine v2.0
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <div class="topbar">
+        <div class="topbar-left">
+          <div class="topbar-title">WarpX AI Assistant</div>
+          <div class="topbar-sub">
+            <span class="status-dot"></span>
+            Online — Neural engine active
+          </div>
+        </div>
+        <button class="clear-btn" id="clearBtn">Clear Chat</button>
+      </div>
+
+      <div class="messages" id="messages">
+        <!-- Welcome screen (replaced on first message) -->
+        <div class="welcome" id="welcome">
+          <img src="favicon-32.png" alt="WarpX AI" class="welcome-logo" />
+          <h2>Welcome to WarpX AI</h2>
+          <p>Your intelligent assistant powered by the WarpXGaming neural engine. Ask me anything about gaming, code, creative ideas, or just chat.</p>
+          <div class="suggestions" id="suggestions">
+            <div class="suggestion" data-prompt="Help me brainstorm a new game concept with unique mechanics">
+              <div class="s-title">🎮 Game concept</div>
+              <div class="s-desc">Brainstorm a unique game idea</div>
+            </div>
+            <div class="suggestion" data-prompt="Write a Python script that generates procedural terrain">
+              <div class="s-title">💻 Code generation</div>
+              <div class="s-desc">Generate a procedural terrain script</div>
+            </div>
+            <div class="suggestion" data-prompt="Explain neural networks in simple terms with an analogy">
+              <div class="s-title">🧠 Explain AI</div>
+              <div class="s-desc">Break down neural networks simply</div>
+            </div>
+            <div class="suggestion" data-prompt="Create a marketing strategy for an indie game studio">
+              <div class="s-title">📈 Game marketing</div>
+              <div class="s-desc">Build an indie marketing plan</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-area">
+        <div class="input-wrapper">
+          <textarea id="input" rows="1" placeholder="Ask WarpX AI anything..." aria-label="Message input"></textarea>
+          <button class="send-btn" id="sendBtn" aria-label="Send message">➤</button>
+        </div>
+        <div class="input-hint">WarpXGaming AI — responses are generated locally</div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    /* ── Particle background ── */
+    (function initParticles() {
+      const canvas = document.getElementById('particles');
+      const ctx = canvas.getContext('2d');
+      let w, h, particles = [];
+
+      function resize() {
+        w = canvas.width = window.innerWidth;
+        h = canvas.height = window.innerHeight;
+      }
+      resize();
+      window.addEventListener('resize', resize);
+
+      for (let i = 0; i < 60; i++) {
+        particles.push({
+          x: Math.random() * w,
+          y: Math.random() * h,
+          r: Math.random() * 1.5 + 0.5,
+          dx: (Math.random() - 0.5) * 0.3,
+          dy: (Math.random() - 0.5) * 0.3,
+          opacity: Math.random() * 0.4 + 0.1
+        });
+      }
+
+      function draw() {
+        ctx.clearRect(0, 0, w, h);
+        for (const p of particles) {
+          p.x += p.dx; p.y += p.dy;
+          if (p.x < 0) p.x = w;
+          if (p.x > w) p.x = 0;
+          if (p.y < 0) p.y = h;
+          if (p.y > h) p.y = 0;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(139, 92, 246, ${p.opacity})`;
+          ctx.fill();
+        }
+        // Draw connections
+        for (let i = 0; i < particles.length; i++) {
+          for (let j = i + 1; j < particles.length; j++) {
+            const dx = particles[i].x - particles[j].x;
+            const dy = particles[i].y - particles[j].y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 120) {
+              ctx.beginPath();
+              ctx.moveTo(particles[i].x, particles[i].y);
+              ctx.lineTo(particles[j].x, particles[j].y);
+              ctx.strokeStyle = `rgba(139, 92, 246, ${0.06 * (1 - dist / 120)})`;
+              ctx.stroke();
+            }
+          }
+        }
+        requestAnimationFrame(draw);
+      }
+      draw();
+    })();
+
+    /* ── Chat engine ── */
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('input');
+    const sendBtn = document.getElementById('sendBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const newChatBtn = document.getElementById('newChat');
+    const welcomeEl = document.getElementById('welcome');
+    const suggestionsEl = document.getElementById('suggestions');
+
+    let chatHistory = [];
+
+    // AI response knowledge base
+    const aiResponses = {
+      greeting: [
+        "Hey there! I'm WarpX AI, your intelligent assistant from WarpXGaming Studios. What can I help you build today?",
+        "Welcome! I'm the WarpX neural engine. Whether it's game design, coding, or creative ideas — I'm here for you.",
+        "Hi! WarpX AI at your service. Let's create something amazing together. What's on your mind?"
+      ],
+      gaming: [
+        "Great gaming question! Here's my take:\n\nFor a standout game concept, consider combining **procedural generation** with **narrative branching**. Imagine a roguelike where every run doesn't just change the map — it changes the *story*. NPCs remember your past runs, the world evolves based on aggregate player decisions, and each death unlocks a new narrative thread.\n\nKey mechanics to consider:\n• Dynamic difficulty that adapts to playstyle\n• Persistent world-state across runs\n• Community-driven events\n\nWant me to dive deeper into any of these?",
+        "From a game design perspective, the most engaging mechanics create **meaningful choices**. Think about systems where:\n\n1. **Resource tension** — players can't have everything\n2. **Emergent gameplay** — simple rules creating complex outcomes\n3. **Risk/reward loops** — optional challenges with real stakes\n\nThe best indie games nail one of these perfectly rather than doing all three poorly. What genre are you targeting?"
+      ],
+      code: [
+        "Here's a clean approach to that:\n\n```python\nimport random\nimport noise\n\ndef generate_terrain(width, height, scale=100.0):\n    terrain = []\n    seed = random.randint(0, 1000)\n    for y in range(height):\n        row = []\n        for x in range(width):\n            val = noise.pnoise2(\n                x / scale, y / scale,\n                octaves=6, persistence=0.5,\n                lacunarity=2.0, base=seed\n            )\n            row.append(val)\n        terrain.append(row)\n    return terrain\n```\n\nThis uses Perlin noise for natural-looking terrain. The `octaves` parameter controls detail level, and `persistence` controls roughness. Want me to add biome classification or erosion simulation?",
+        "Here's an optimized solution:\n\n```javascript\nclass NeuralLayer {\n  constructor(inputSize, outputSize) {\n    this.weights = Array.from({ length: outputSize },\n      () => Array.from({ length: inputSize },\n        () => (Math.random() - 0.5) * 2\n      )\n    );\n    this.bias = new Array(outputSize).fill(0);\n  }\n\n  forward(input) {\n    return this.weights.map((w, i) =>\n      Math.tanh(w.reduce((sum, wj, j) =>\n        sum + wj * input[j], this.bias[i]\n      ))\n    );\n  }\n}\n```\n\nThis is a basic neural network layer with tanh activation. Want me to add backpropagation or extend it to a full network?"
+      ],
+      ai: [
+        "Neural networks are actually simpler than they sound. Think of it like this:\n\n**Analogy:** Imagine a massive phone tree where each person can only answer yes/no questions. Alone, each person is useless. But chain thousands together in layers, and they can collectively recognize faces, write poetry, or play chess.\n\nThe key concepts:\n• **Neurons** — simple math functions (multiply, add, activate)\n• **Layers** — groups of neurons processing in parallel\n• **Training** — adjusting connections based on mistakes\n• **Weights** — the strength of each connection\n\nThe magic isn't in any single neuron — it's in the *patterns* that emerge from billions of connections working together. That's essentially what powers me here at WarpX!",
+        "AI/ML is a fascinating field. Here's the landscape:\n\n🔹 **Supervised Learning** — teach with labeled examples\n🔹 **Unsupervised Learning** — find hidden patterns\n🔹 **Reinforcement Learning** — learn by trial and error\n🔹 **Generative AI** — create new content (images, text, code)\n\nFor game development, RL is especially exciting — you can train NPCs that actually *learn* to play rather than following scripted behaviors. Want me to explain any of these in more detail?"
+      ],
+      marketing: [
+        "Here's a solid indie game marketing framework:\n\n**Phase 1: Pre-Launch (6 months out)**\n• Build a dev blog with weekly updates\n• Start a Discord community early\n• Create a compelling Steam page with GIFs\n• Reach out to 50+ micro-influencers\n\n**Phase 2: Hype Building (3 months)**\n• Release a playable demo\n• Submit to indie game festivals\n• Run a closed beta with community members\n• Create shareable content (memes, clips)\n\n**Phase 3: Launch Week**\n• Coordinate influencer coverage\n• Cross-promote with other indie devs\n• Run launch discount (10-15%)\n• Engage in every community post\n\n**Budget tip:** Your best marketing asset is *authenticity*. Show the messy process, share failures, celebrate small wins. Players connect with real developers.",
+      ],
+      fallback: [
+        "That's an interesting question! Let me think about this from the WarpX perspective.\n\nWhile I'm primarily designed for gaming, coding, and creative tasks, I can definitely help with that. Could you give me a bit more context so I can provide the most useful response?",
+        "Good question! I'm the WarpX AI assistant, optimized for game development, programming, AI concepts, and creative brainstorming. I'd love to help — could you elaborate a bit more on what you're looking for?",
+        "I appreciate the question! As WarpX AI, I'm built to assist with all things gaming and tech. Let me give you my best take on this — and if you need me to go deeper on any point, just say the word."
+      ]
+    };
+
+    function classifyInput(text) {
+      const lower = text.toLowerCase();
+      if (/^(hi|hey|hello|yo|sup|what'?s up|greetings)/i.test(lower)) return 'greeting';
+      if (/game|play|level|boss|npc|rpg|fps|roguelike|multiplayer|unity|unreal|godot|indie/i.test(lower)) return 'gaming';
+      if (/code|script|function|class|program|python|javascript|html|css|api|algorithm|debug|bug/i.test(lower)) return 'code';
+      if (/ai|neural|machine learn|deep learn|model|train|gpt|network|llm|artificial/i.test(lower)) return 'ai';
+      if (/market|promot|audience|launch|brand|social media|discord|community|steam|strategy/i.test(lower)) return 'marketing';
+      return 'fallback';
+    }
+
+    function pickRandom(arr) {
+      return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    function getTimeString() {
+      return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function escapeHTML(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function formatResponse(text) {
+      // Convert markdown-like formatting to HTML
+      return text
+        .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/`(.*?)`/g, '<code>$1</code>')
+        .replace(/^• (.+)$/gm, '<span style="display:block;padding-left:12px">• $1</span>')
+        .replace(/^(\d+)\. (.+)$/gm, '<span style="display:block;padding-left:12px">$1. $2</span>')
+        .replace(/\n/g, '<br>');
+    }
+
+    function addMessage(text, sender) {
+      if (welcomeEl) welcomeEl.remove();
+
+      const row = document.createElement('div');
+      row.className = `msg-row ${sender}`;
+
+      const avatar = document.createElement('div');
+      avatar.className = `msg-avatar ${sender === 'ai' ? 'ai-av' : 'user-av'}`;
+      avatar.textContent = sender === 'ai' ? 'W' : 'U';
+
+      const content = document.createElement('div');
+      const bubble = document.createElement('div');
+      bubble.className = 'msg-bubble';
+
+      if (sender === 'ai') {
+        bubble.innerHTML = formatResponse(text);
+      } else {
+        bubble.textContent = text;
+      }
+
+      const time = document.createElement('div');
+      time.className = 'msg-time';
+      time.textContent = getTimeString();
+
+      content.appendChild(bubble);
+      content.appendChild(time);
+      row.appendChild(avatar);
+      row.appendChild(content);
+      messagesEl.appendChild(row);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+
+      chatHistory.push({ sender, text });
+    }
+
+    function showTyping() {
+      const row = document.createElement('div');
+      row.className = 'msg-row ai';
+      row.id = 'typing-indicator';
+
+      const avatar = document.createElement('div');
+      avatar.className = 'msg-avatar ai-av';
+      avatar.textContent = 'W';
+
+      const bubble = document.createElement('div');
+      bubble.className = 'msg-bubble';
+      bubble.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+
+      row.appendChild(avatar);
+      row.appendChild(bubble);
+      messagesEl.appendChild(row);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function removeTyping() {
+      const el = document.getElementById('typing-indicator');
+      if (el) el.remove();
+    }
+
+    function sendMessage(text) {
+      if (!text.trim()) return;
+
+      addMessage(text.trim(), 'user');
+      inputEl.value = '';
+      inputEl.style.height = 'auto';
+      sendBtn.disabled = true;
+
+      showTyping();
+
+      // Simulate AI thinking delay
+      const delay = 800 + Math.random() * 1200;
+      setTimeout(() => {
+        removeTyping();
+        const category = classifyInput(text);
+        const response = pickRandom(aiResponses[category]);
+        addMessage(response, 'ai');
+        sendBtn.disabled = false;
+      }, delay);
+    }
+
+    // Event listeners
+    sendBtn.addEventListener('click', () => sendMessage(inputEl.value));
+
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage(inputEl.value);
+      }
+    });
+
+    // Auto-resize textarea
+    inputEl.addEventListener('input', () => {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+    });
+
+    // Suggestion clicks
+    suggestionsEl.addEventListener('click', (e) => {
+      const suggestion = e.target.closest('.suggestion');
+      if (suggestion) {
+        sendMessage(suggestion.dataset.prompt);
+      }
+    });
+
+    // Clear chat
+    clearBtn.addEventListener('click', () => {
+      chatHistory = [];
+      messagesEl.innerHTML = '';
+      // Re-add welcome
+      messagesEl.innerHTML = `
+        <div class="welcome" id="welcome">
+          <img src="favicon-32.png" alt="WarpX AI" class="welcome-logo" />
+          <h2>Welcome to WarpX AI</h2>
+          <p>Your intelligent assistant powered by the WarpXGaming neural engine. Ask me anything about gaming, code, creative ideas, or just chat.</p>
+          <div class="suggestions" id="suggestions">
+            <div class="suggestion" data-prompt="Help me brainstorm a new game concept with unique mechanics">
+              <div class="s-title">🎮 Game concept</div>
+              <div class="s-desc">Brainstorm a unique game idea</div>
+            </div>
+            <div class="suggestion" data-prompt="Write a Python script that generates procedural terrain">
+              <div class="s-title">💻 Code generation</div>
+              <div class="s-desc">Generate a procedural terrain script</div>
+            </div>
+            <div class="suggestion" data-prompt="Explain neural networks in simple terms with an analogy">
+              <div class="s-title">🧠 Explain AI</div>
+              <div class="s-desc">Break down neural networks simply</div>
+            </div>
+            <div class="suggestion" data-prompt="Create a marketing strategy for an indie game studio">
+              <div class="s-title">📈 Game marketing</div>
+              <div class="s-desc">Build an indie marketing plan</div>
+            </div>
+          </div>
+        </div>`;
+    });
+
+    // New chat button
+    newChatBtn.addEventListener('click', () => clearBtn.click());
+
+    // Focus input on load
+    inputEl.focus();
+  </script>
+</body>
+</html>
